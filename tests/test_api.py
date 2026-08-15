@@ -1,0 +1,93 @@
+from unittest.mock import patch
+
+
+def event(event_id="evt-1", source="machine-a", event_type="temperature", value=72.4):
+    return {
+        "event_id": event_id,
+        "source": source,
+        "event_type": event_type,
+        "value": value,
+        "unit": "celsius",
+        "metadata": {"factory": "plant-1"},
+        "occurred_at": "2026-08-14T09:00:00Z",
+    }
+
+def test_health(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+def test_create_get_and_duplicate(client):
+    r = client.post("/api/v1/events", json=event())
+    assert r.status_code == 201
+    assert r.json()["processing_status"] == "processed"
+
+    r = client.get("/api/v1/events/evt-1")
+    assert r.status_code == 200
+
+    r = client.post("/api/v1/events", json=event())
+    assert r.status_code == 409
+
+def test_batch_and_filter(client):
+    payload = {
+        "events": [
+            event("evt-1", "machine-a"),
+            event("evt-2", "machine-b", value=50),
+            event("evt-2", "machine-b", value=50),
+        ]
+    }
+    r = client.post("/api/v1/events/batch", json=payload)
+    assert r.status_code == 200
+    assert r.json()["accepted"] == 2
+    assert r.json()["duplicates"] == 1
+
+    r = client.get("/api/v1/events?source=machine-a")
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+def test_analytics(client):
+    client.post("/api/v1/events", json=event("1", "machine-a", "temperature", 10))
+    client.post("/api/v1/events", json=event("2", "machine-a", "vibration", 20))
+    client.post("/api/v1/events", json=event("3", "machine-b", "temperature", 30))
+
+    r = client.get("/api/v1/analytics/summary")
+    assert r.status_code == 200
+    assert r.json()["total_events"] == 3
+    assert r.json()["average_value"] == 20.0
+
+    r = client.get("/api/v1/analytics/by-source")
+    rows = {x["key"]: x for x in r.json()}
+    assert rows["machine-a"]["count"] == 2
+    assert rows["machine-b"]["count"] == 1
+
+def test_async_event_processing_flow(client):
+    payload = {
+        "event_id": "evt-async-001",
+        "source": "machine-async",
+        "event_type": "temperature",
+        "value": 33.3,
+        "unit": "celsius",
+        "metadata": {
+            "factory": "plant-async"
+        },
+        "occurred_at": "2026-08-14T10:20:00Z",
+    }
+
+    with patch("src.api.routes_events.settings.process_async", True), \
+         patch("src.api.routes_events.process_event_task.delay") as mock_delay:
+
+        response = client.post("/api/v1/events", json=payload)
+
+        assert response.status_code == 201
+        assert response.json()["processing_status"] == "pending"
+
+        mock_delay.assert_called_once_with("evt-async-001")
+
+    process_response = client.post(
+        "/api/v1/events/evt-async-001/process"
+    )
+
+    assert process_response.status_code == 200
+    assert process_response.json()["processing_status"] == "processed"
+    assert process_response.json()["quality_status"] == "good"
+    assert process_response.json()["normalized_value"] is not None
