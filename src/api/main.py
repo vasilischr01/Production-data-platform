@@ -1,10 +1,19 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 
+from src.api.errors import (
+    http_exception_handler,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
+from src.api.middleware import (
+    RequestIDMiddleware,
+)
 from src.api.routes_admin import router as admin_router
 from src.api.routes_analytics import router as analytics_router
 from src.api.routes_auth import router as auth_router
@@ -30,6 +39,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+app.add_middleware(RequestIDMiddleware)
+app.add_exception_handler(
+    HTTPException,
+    http_exception_handler,
+)
+
+app.add_exception_handler(
+    RequestValidationError,
+    validation_exception_handler,
+)
+
+app.add_exception_handler(
+    Exception,
+    unhandled_exception_handler,
+)
 
 @app.get("/health")
 def health():
