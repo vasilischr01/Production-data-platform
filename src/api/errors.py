@@ -15,6 +15,7 @@ def build_error_response(
     code: str,
     message: str,
     details=None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     payload = {
         "error": {
@@ -30,6 +31,7 @@ def build_error_response(
     return JSONResponse(
         status_code=status_code,
         content=payload,
+        headers=headers,
     )
 
 
@@ -41,6 +43,7 @@ async def http_exception_handler(
         status_code=exc.status_code,
         code="http_error",
         message=str(exc.detail),
+        headers=exc.headers,
     )
 
 

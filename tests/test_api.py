@@ -754,3 +754,61 @@ def test_duplicate_only_batch_does_not_invalidate_cache(
     assert response.json()["accepted"] == 0
     assert response.json()["duplicates"] == 1
     mock_invalidate.assert_not_called()
+
+def test_login_within_rate_limit(
+    client,
+):
+    credentials = {
+        "email": "rate-ok@example.com",
+        "password": "StrongPassword123!",
+    }
+
+    client.post(
+        "/api/v1/auth/register",
+        json=credentials,
+    )
+
+    with patch(
+        "src.core.rate_limit.redis_client.incr",
+        return_value=1,
+    ):
+        response = client.post(
+            "/api/v1/auth/login",
+            json=credentials,
+        )
+
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_login_rate_limit_exceeded(
+    client,
+):
+    credentials = {
+        "email": "rate-limited@example.com",
+        "password": "StrongPassword123!",
+    }
+
+    client.post(
+        "/api/v1/auth/register",
+        json=credentials,
+    )
+
+    with patch(
+        "src.core.rate_limit.redis_client.incr",
+        return_value=11,
+    ):
+        response = client.post(
+            "/api/v1/auth/login",
+            json=credentials,
+        )
+
+    assert response.status_code == 429
+
+    body = response.json()
+
+    assert body["error"]["message"] == "Rate limit exceeded"
+
+    assert response.headers[
+        "Retry-After"
+    ] == "60"

@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from src.core.config import settings
+from src.core.rate_limit import enforce_rate_limit
 from src.core.security import (
     create_access_token,
     hash_password,
@@ -30,8 +32,15 @@ router = APIRouter(
 )
 def register(
     payload: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> UserRead:
+    enforce_rate_limit(
+        request,
+        limit=settings.auth_rate_limit_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+        scope="register",
+    )
     existing_user = get_user_by_email(
         db,
         payload.email,
@@ -60,8 +69,15 @@ def register(
 )
 def login(
     payload: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
+    enforce_rate_limit(
+        request,
+        limit=settings.auth_rate_limit_requests,
+        window_seconds=settings.auth_rate_limit_window_seconds,
+        scope="login",
+    )
     user = get_user_by_email(
         db,
         payload.email,

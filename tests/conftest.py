@@ -41,6 +41,22 @@ def mock_redis():
             "src.services.cache.redis_client.delete",
             return_value=1,
         ),
+        patch(
+            "src.core.rate_limit.redis_client.incr",
+            return_value=1,
+        ),
+        patch(
+            "src.core.rate_limit.redis_client.expire",
+            return_value=True,
+        ),
+        patch(
+            "src.core.rate_limit.redis_client.incr",
+            return_value=1,
+        ),
+        patch(
+            "src.core.rate_limit.redis_client.expire",
+            return_value=True,
+        ),
     ):
         yield
 
