@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from sqlalchemy.orm import Session
@@ -562,3 +563,194 @@ def test_request_id_is_preserved(
         ]
         == request_id
     )
+
+def test_ready_checks_dependencies(
+    client,
+):
+    response = client.get(
+        "/ready"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready"
+    }
+
+def test_analytics_summary_cache_miss(
+    client,
+):
+    cached_summary = {
+        "total_events": 0,
+        "processed_events": 0,
+        "pending_events": 0,
+        "good_quality_events": 0,
+        "bad_quality_events": 0,
+        "average_value": None,
+    }
+
+    with (
+        patch(
+            "src.api.routes_analytics.redis_client.get",
+            return_value=None,
+        ) as mock_get,
+        patch(
+            "src.api.routes_analytics.redis_client.setex",
+            return_value=True,
+        ) as mock_setex,
+        patch(
+            "src.api.routes_analytics.EventRepository.summary",
+            return_value=cached_summary,
+        ) as mock_summary,
+    ):
+        response = client.get(
+            "/api/v1/analytics/summary"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == cached_summary
+
+    mock_get.assert_called_once_with(
+        "analytics:summary:v1"
+    )
+
+    mock_summary.assert_called_once()
+
+    mock_setex.assert_called_once()
+
+
+def test_analytics_summary_cache_hit(
+    client,
+):
+    cached_summary = {
+        "total_events": 12,
+        "processed_events": 8,
+        "pending_events": 4,
+        "good_quality_events": 7,
+        "bad_quality_events": 1,
+        "average_value": 42.5,
+    }
+
+    with (
+        patch(
+            "src.api.routes_analytics.redis_client.get",
+            return_value=json.dumps(
+                cached_summary
+            ),
+        ) as mock_get,
+        patch(
+            "src.api.routes_analytics.redis_client.setex",
+        ) as mock_setex,
+        patch(
+            "src.api.routes_analytics.EventRepository.summary",
+        ) as mock_summary,
+    ):
+        response = client.get(
+            "/api/v1/analytics/summary"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == cached_summary
+
+    mock_get.assert_called_once_with(
+        "analytics:summary:v1"
+    )
+
+    mock_summary.assert_not_called()
+    mock_setex.assert_not_called()
+
+def test_create_event_invalidates_analytics_cache(
+    client,
+):
+    payload = {
+        "event_id": "event-cache-1",
+        "source": "sensor-a",
+        "event_type": "temperature",
+        "value": 21.5,
+        "unit": "celsius",
+        "metadata_json": {},
+        "occurred_at": "2026-08-17T10:00:00Z",
+    }
+
+    with patch(
+        "src.api.routes_events.invalidate_analytics_cache"
+    ) as mock_invalidate:
+        response = client.post(
+            "/api/v1/events",
+            json=payload,
+        )
+
+    assert response.status_code == 201
+    mock_invalidate.assert_called_once()
+
+
+def test_batch_event_creation_invalidates_cache_once(
+    client,
+):
+    payload = {
+        "events": [
+            {
+                "event_id": "batch-cache-1",
+                "source": "sensor-a",
+                "event_type": "temperature",
+                "value": 20.0,
+                "unit": "celsius",
+                "metadata_json": {},
+                "occurred_at": "2026-08-17T10:00:00Z",
+            },
+            {
+                "event_id": "batch-cache-2",
+                "source": "sensor-b",
+                "event_type": "temperature",
+                "value": 22.0,
+                "unit": "celsius",
+                "metadata_json": {},
+                "occurred_at": "2026-08-17T10:01:00Z",
+            },
+        ]
+    }
+
+    with patch(
+        "src.api.routes_events.invalidate_analytics_cache"
+    ) as mock_invalidate:
+        response = client.post(
+            "/api/v1/events/batch",
+            json=payload,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] == 2
+    mock_invalidate.assert_called_once()
+
+
+def test_duplicate_only_batch_does_not_invalidate_cache(
+    client,
+):
+    event = {
+        "event_id": "duplicate-cache-1",
+        "source": "sensor-a",
+        "event_type": "temperature",
+        "value": 20.0,
+        "unit": "celsius",
+        "metadata_json": {},
+        "occurred_at": "2026-08-17T10:00:00Z",
+    }
+
+    client.post(
+        "/api/v1/events",
+        json=event,
+    )
+
+    with patch(
+        "src.api.routes_events.invalidate_analytics_cache"
+    ) as mock_invalidate:
+        response = client.post(
+            "/api/v1/events/batch",
+            json={
+                "events": [event]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] == 0
+    assert response.json()["duplicates"] == 1
+    mock_invalidate.assert_not_called()

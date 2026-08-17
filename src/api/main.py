@@ -21,6 +21,7 @@ from src.api.routes_events import router as events_router
 from src.api.routes_users import router as users_router
 from src.core.config import settings
 from src.core.logging import configure_logging
+from src.core.redis import redis_client
 from src.db.base import Base
 from src.db.session import engine
 
@@ -68,6 +69,7 @@ def health():
 def ready():
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
+    redis_client.ping()
 
     return {"status": "ready"}
 
