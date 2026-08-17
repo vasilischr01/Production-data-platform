@@ -1,10 +1,15 @@
 import logging
 from time import perf_counter
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from src.core.config import settings
+from src.core.idempotency import (
+    ensure_idempotency_key,
+    get_idempotent_response,
+    store_idempotent_response,
+)
 from src.core.metrics import (
     EVENTS_DUPLICATE,
     EVENTS_INGESTED,
@@ -52,8 +57,24 @@ def enqueue(
 )
 def create_event(
     payload: EventCreate,
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+    ),
     db: Session = Depends(get_db),
 ):
+    key = ensure_idempotency_key(
+    idempotency_key
+    )
+
+    cached_response = get_idempotent_response(
+        key
+    )
+
+    if cached_response is not None:
+        return EventRead.model_validate(
+            cached_response
+        )
     start = perf_counter()
 
     repo = EventRepository(db)
@@ -101,9 +122,22 @@ def create_event(
 
     invalidate_analytics_cache()
 
-    return repo.get_by_event_id(
-        event.event_id
+    response = repo.get_by_event_id(
+    event.event_id
     )
+
+    response_model = EventRead.model_validate(
+        response
+    )
+
+    store_idempotent_response(
+        key,
+        response_model.model_dump(
+            mode="json"
+        ),
+    )
+
+    return response_model
 
 
 @router.post(

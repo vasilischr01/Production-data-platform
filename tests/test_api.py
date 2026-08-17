@@ -25,14 +25,26 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 def test_create_get_and_duplicate(client):
-    r = client.post("/api/v1/events", json=event())
+    r = client.post(
+        "/api/v1/events",
+        json=event(),
+        headers={
+            "Idempotency-Key": "test-create-event-1",
+        },
+    )
     assert r.status_code == 201
     assert r.json()["processing_status"] == "processed"
 
     r = client.get("/api/v1/events/evt-1")
     assert r.status_code == 200
 
-    r = client.post("/api/v1/events", json=event())
+    r = client.post(
+        "/api/v1/events",
+        json=event(),
+        headers={
+            "Idempotency-Key": "test-duplicate-event-2",
+        },
+    )
     assert r.status_code == 409
 
 def test_batch_and_filter(client):
@@ -53,9 +65,27 @@ def test_batch_and_filter(client):
     assert len(r.json()) == 1
 
 def test_analytics(client):
-    client.post("/api/v1/events", json=event("1", "machine-a", "temperature", 10))
-    client.post("/api/v1/events", json=event("2", "machine-a", "vibration", 20))
-    client.post("/api/v1/events", json=event("3", "machine-b", "temperature", 30))
+    client.post(
+        "/api/v1/events",
+        json=event("1", "machine-a", "temperature", 10),
+        headers={
+            "Idempotency-Key": "analytics-event-1",
+        },
+    )
+    client.post(
+        "/api/v1/events",
+        json=event("2", "machine-a", "vibration", 20),
+        headers={
+            "Idempotency-Key": "analytics-event-2",
+        },
+    )
+    client.post(
+        "/api/v1/events",
+        json=event("3", "machine-b", "temperature", 30),
+        headers={
+            "Idempotency-Key": "analytics-event-3",
+        },
+    )
 
     r = client.get("/api/v1/analytics/summary")
     assert r.status_code == 200
@@ -83,7 +113,13 @@ def test_async_event_processing_flow(client):
     with patch("src.api.routes_events.settings.process_async", True), \
          patch("src.api.routes_events.process_event_task.delay") as mock_delay:
 
-        response = client.post("/api/v1/events", json=payload)
+        response = client.post(
+            "/api/v1/events",
+            json=payload,
+            headers={
+                "Idempotency-Key": "async-event-1",
+            },
+        )
 
         assert response.status_code == 201
         assert response.json()["processing_status"] == "pending"
@@ -677,6 +713,9 @@ def test_create_event_invalidates_analytics_cache(
         response = client.post(
             "/api/v1/events",
             json=payload,
+            headers={
+                "Idempotency-Key": "cache-invalidation-event-1",
+            },
         )
 
     assert response.status_code == 201
@@ -738,6 +777,9 @@ def test_duplicate_only_batch_does_not_invalidate_cache(
     client.post(
         "/api/v1/events",
         json=event,
+        headers={
+            "Idempotency-Key": "duplicate-cache-seed-1",
+        },
     )
 
     with patch(
@@ -812,3 +854,105 @@ def test_login_rate_limit_exceeded(
     assert response.headers[
         "Retry-After"
     ] == "60"
+
+def test_event_idempotency_stores_response(
+    client,
+):
+    payload = {
+        "event_id": "idempotent-event-1",
+        "source": "sensor-a",
+        "event_type": "temperature",
+        "value": 25.0,
+        "unit": "celsius",
+        "metadata_json": {},
+        "occurred_at": "2026-08-17T10:00:00Z",
+    }
+
+    with (
+        patch(
+            "src.core.idempotency.redis_client.get",
+            return_value=None,
+        ) as mock_get,
+        patch(
+            "src.core.idempotency.redis_client.setex",
+            return_value=True,
+        ) as mock_setex,
+    ):
+        response = client.post(
+            "/api/v1/events",
+            json=payload,
+            headers={
+                "Idempotency-Key": "idem-key-1",
+            },
+        )
+
+    assert response.status_code == 201
+
+    mock_get.assert_called_once_with(
+        "idempotency:idem-key-1"
+    )
+
+    mock_setex.assert_called_once()
+
+
+def test_event_idempotency_replays_cached_response(
+    client,
+):
+    cached_response = {
+        "event_id": "idempotent-event-2",
+        "source": "sensor-a",
+        "event_type": "temperature",
+        "value": 30.0,
+        "unit": "celsius",
+        "metadata_json": {},
+        "occurred_at": "2026-08-17T10:00:00Z",
+        "ingested_at": "2026-08-17T10:00:01Z",
+        "processed_at": "2026-08-17T10:00:02Z",
+        "processing_status": "processed",
+        "quality_status": "good",
+        "normalized_value": 30.0,
+    }
+
+    with (
+        patch(
+            "src.core.idempotency.redis_client.get",
+            return_value=json.dumps(
+                cached_response
+            ),
+        ) as mock_get,
+        patch(
+            "src.core.idempotency.redis_client.setex",
+        ) as mock_setex,
+        patch(
+            "src.api.routes_events.EventRepository.create",
+        ) as mock_create,
+    ):
+        response = client.post(
+            "/api/v1/events",
+            json={
+                "event_id": "different-request-body-id",
+                "source": "sensor-b",
+                "event_type": "vibration",
+                "value": 99.0,
+                "unit": "mm/s",
+                "metadata_json": {},
+                "occurred_at": "2026-08-17T11:00:00Z",
+            },
+            headers={
+                "Idempotency-Key": "idem-key-2",
+            },
+        )
+
+    assert response.status_code == 201
+
+    assert (
+        response.json()["event_id"]
+        == "idempotent-event-2"
+    )
+
+    mock_get.assert_called_once_with(
+        "idempotency:idem-key-2"
+    )
+
+    mock_create.assert_not_called()
+    mock_setex.assert_not_called()

@@ -57,6 +57,14 @@ def mock_redis():
             "src.core.rate_limit.redis_client.expire",
             return_value=True,
         ),
+        patch(
+            "src.core.idempotency.redis_client.get",
+            return_value=None,
+        ),
+        patch(
+            "src.core.idempotency.redis_client.setex",
+            return_value=True,
+        ),
     ):
         yield
 
