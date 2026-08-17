@@ -91,3 +91,132 @@ def test_async_event_processing_flow(client):
     assert process_response.json()["processing_status"] == "processed"
     assert process_response.json()["quality_status"] == "good"
     assert process_response.json()["normalized_value"] is not None
+
+def test_register_user(client):
+    response = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "user@example.com",
+            "password": "StrongPassword123!",
+        },
+    )
+
+    assert response.status_code == 201
+
+    body = response.json()
+
+    assert body["email"] == "user@example.com"
+    assert body["role"] == "user"
+    assert body["is_active"] is True
+    assert "hashed_password" not in body
+
+
+def test_duplicate_registration_is_rejected(client):
+    payload = {
+        "email": "duplicate@example.com",
+        "password": "StrongPassword123!",
+    }
+
+    first_response = client.post(
+        "/api/v1/auth/register",
+        json=payload,
+    )
+
+    second_response = client.post(
+        "/api/v1/auth/register",
+        json=payload,
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 409
+
+
+def test_login_returns_access_token(client):
+    payload = {
+        "email": "login@example.com",
+        "password": "StrongPassword123!",
+    }
+
+    client.post(
+        "/api/v1/auth/register",
+        json=payload,
+    )
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["token_type"] == "bearer"
+    assert isinstance(body["access_token"], str)
+    assert body["access_token"]
+
+
+def test_login_rejects_wrong_password(client):
+    client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "wrong-password@example.com",
+            "password": "CorrectPassword123!",
+        },
+    )
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "wrong-password@example.com",
+            "password": "WrongPassword123!",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_current_user_endpoint(client):
+    credentials = {
+        "email": "me@example.com",
+        "password": "StrongPassword123!",
+    }
+
+    client.post(
+        "/api/v1/auth/register",
+        json=credentials,
+    )
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json=credentials,
+    )
+
+    token = login_response.json()[
+        "access_token"
+    ]
+
+    response = client.get(
+        "/api/v1/users/me",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["email"] == "me@example.com"
+    assert body["role"] == "user"
+
+
+def test_current_user_rejects_invalid_token(client):
+    response = client.get(
+        "/api/v1/users/me",
+        headers={
+            "Authorization": "Bearer invalid-token"
+        },
+    )
+
+    assert response.status_code == 401

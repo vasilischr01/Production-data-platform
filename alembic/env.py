@@ -5,6 +5,8 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from src.core.config import settings
 from src.db.base import Base
+from src.models.event import Event  # noqa: F401
+from src.models.user import User  # noqa: F401
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

@@ -1,0 +1,35 @@
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from src.models.user import User
+
+
+def get_user_by_email(
+    db: Session,
+    email: str,
+) -> User | None:
+    statement = select(User).where(
+        User.email == email
+    )
+
+    return db.scalar(statement)
+
+
+def create_user(
+    db: Session,
+    *,
+    email: str,
+    hashed_password: str,
+    role: str = "user",
+) -> User:
+    user = User(
+        email=email,
+        hashed_password=hashed_password,
+        role=role,
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user

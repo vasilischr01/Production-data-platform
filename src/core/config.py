@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     process_async: bool = False
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    jwt_secret_key: str = ("dev-only-change-this-jwt-secret-key-123456789")
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
 
 @lru_cache
 def get_settings() -> Settings:

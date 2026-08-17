@@ -6,7 +6,9 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 
 from src.api.routes_analytics import router as analytics_router
+from src.api.routes_auth import router as auth_router
 from src.api.routes_events import router as events_router
+from src.api.routes_users import router as users_router
 from src.core.config import settings
 from src.core.logging import configure_logging
 from src.db.base import Base
@@ -54,3 +56,5 @@ def metrics():
 
 app.include_router(events_router)
 app.include_router(analytics_router)
+app.include_router(auth_router)
+app.include_router(users_router)
