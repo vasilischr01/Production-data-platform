@@ -1,77 +1,134 @@
 # Production Data Platform
 
-A production-style backend and data engineering platform built with FastAPI, PostgreSQL, Redis, Celery, SQLAlchemy, Alembic, Docker Compose, Prometheus, structured logging, automated tests, and GitHub Actions.
+A production-style backend and data engineering platform built with **FastAPI, PostgreSQL, Redis, Celery, SQLAlchemy, Alembic, Docker Compose, Prometheus, JWT authentication, role-based access control, structured logging, automated tests, and GitHub Actions**.
 
-The project demonstrates how a modern data platform can ingest, validate, persist, process, monitor, and expose event data through a clean REST API.
+The project demonstrates how a modern service can ingest, validate, persist, process, secure, monitor, cache, and expose event data through a versioned REST API.
+
+> This is a portfolio / engineering project intended to demonstrate production-oriented backend and data-platform patterns.
 
 ---
 
 ## Architecture
 
 ```text
-                     ┌──────────────────────┐
-                     │   Client / Producer  │
-                     └──────────┬───────────┘
-                                │
-                                ▼
-                     ┌──────────────────────┐
-                     │       FastAPI        │
-                     │  Validation / REST   │
-                     └───────┬───────┬──────┘
-                             │       │
-                             │       │
-                             ▼       ▼
-                 ┌──────────────┐   ┌──────────────┐
-                 │ PostgreSQL   │   │    Redis     │
-                 │ Event Store  │   │ Task Broker  │
-                 └──────┬───────┘   └──────┬───────┘
-                        │                  │
-                        │                  ▼
-                        │          ┌──────────────┐
-                        │          │ Celery Worker│
-                        │          │ Processing   │
-                        │          └──────┬───────┘
-                        │                 │
-                        └─────────────────┘
-                                  │
-                                  ▼
-                         ┌─────────────────┐
-                         │ Analytics API   │
-                         │ + Prometheus    │
-                         └─────────────────┘
+                         ┌──────────────────────┐
+                         │   Client / Producer  │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │       FastAPI        │
+                         │ REST + Validation    │
+                         │ Auth + RBAC          │
+                         │ Rate Limiting        │
+                         │ Idempotency          │
+                         └───────┬───────┬──────┘
+                                 │       │
+                    ┌────────────┘       └────────────┐
+                    ▼                                 ▼
+          ┌──────────────────┐              ┌──────────────────┐
+          │    PostgreSQL    │              │      Redis       │
+          │ Events + Users   │              │ Broker + Cache   │
+          └────────┬─────────┘              │ Rate Limit State │
+                   │                        │ Idempotency Store │
+                   │                        └────────┬─────────┘
+                   │                                 │
+                   │                                 ▼
+                   │                       ┌──────────────────┐
+                   │                       │  Celery Worker   │
+                   │                       │ Event Processing │
+                   │                       └────────┬─────────┘
+                   │                                │
+                   └────────────────┬───────────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │   Analytics API      │
+                         │ Redis TTL Cache      │
+                         │ Prometheus Metrics   │
+                         │ Structured Logs      │
+                         └──────────────────────┘
 ```
 
-Events are accepted by the API, persisted in PostgreSQL, queued through Redis, processed asynchronously by Celery, and written back to PostgreSQL.
+Events are accepted by FastAPI, persisted in PostgreSQL, optionally queued through Redis for Celery processing, enriched by the processing pipeline, and exposed through event and analytics APIs. Redis is also used for analytics caching, authentication rate limiting, and idempotency state.
 
 ---
 
-## Features
+## Key Features
 
-- REST API built with FastAPI
+### API and data ingestion
+
+- Versioned REST API built with FastAPI
 - Single-event ingestion
 - Batch ingestion
-- Pydantic schema validation
+- Pydantic request/response validation
 - Duplicate-event protection using unique `event_id`
+- Event filtering and pagination
+- Explicit processing endpoint
+- Aggregated analytics endpoints
+
+### Persistence and processing
+
 - PostgreSQL persistence
 - SQLAlchemy 2.x ORM
 - Alembic database migrations
+- Repository layer for database access
+- Service layer for processing and quality rules
 - Redis message broker
 - Celery asynchronous background processing
 - Event quality checks
 - Value normalization
-- Filtering and pagination
-- Aggregated analytics endpoints
-- Health and readiness probes
-- Prometheus-compatible monitoring
+
+### Authentication and authorization
+
+- User registration and login
+- JWT bearer authentication
+- Password hashing
+- Current-user endpoint
+- Typed user roles
+- Role-based access control (RBAC)
+- Admin-only user-management endpoints
+- Pagination, filtering, email search, and sorting for admin user queries
+
+### Reliability and API protection
+
+- Redis-backed rate limiting for authentication endpoints
+- `429 Too Many Requests` responses with `Retry-After`
+- Redis-backed idempotency for single-event ingestion
+- `Idempotency-Key` support for safe request replay
+- Analytics cache invalidation after event writes
+- Duplicate-only batches avoid unnecessary cache invalidation
+
+### Caching
+
+- Redis TTL cache for analytics summary
+- Cache-hit and cache-miss paths
+- Automatic invalidation after relevant event mutations
+- Configurable analytics cache TTL
+
+### Observability
+
+- `/health` liveness endpoint
+- `/ready` readiness endpoint
+- Readiness checks for database and Redis
+- Prometheus-compatible metrics
 - Custom ingestion, duplicate, processing, and latency metrics
 - Structured JSON logging
+- Request IDs propagated through responses
+- Request tracing middleware
+- Centralized error responses
+- HTTP exception headers preserved by the global error handler
+
+### Engineering quality
+
 - Docker and Docker Compose
-- Automated tests with pytest
-- Async processing integration test
+- Environment-variable configuration
+- pytest automated test suite
+- Integration-style API tests
+- Redis/Celery behavior mocked where appropriate for deterministic tests
 - Ruff linting
 - GitHub Actions CI
-- Environment-variable configuration
-- Secrets and local databases excluded from version control
+- Secrets, local databases, caches, and virtual environments excluded from version control
 
 ---
 
@@ -90,15 +147,25 @@ Events are accepted by the API, persisted in PostgreSQL, queued through Redis, p
 - SQLAlchemy
 - Alembic
 
-### Async Processing
+### Distributed / Async Infrastructure
 
 - Redis
 - Celery
+
+### Security
+
+- JWT authentication
+- Password hashing
+- RBAC
+- Redis-backed rate limiting
+- Idempotency keys
 
 ### Observability
 
 - Prometheus Client
 - Structured JSON logging
+- Request tracing / request IDs
+- Centralized exception handling
 
 ### Engineering
 
@@ -121,35 +188,52 @@ production-data-platform/
 │
 ├── alembic/
 │   ├── versions/
-│   │   └── 0001_create_events.py
-│   └── env.py
+│   │   ├── 0001_create_events.py
+│   │   └── ..._add_users_table.py
+│   ├── env.py
+│   └── script.py.mako
 │
 ├── src/
 │   ├── api/
+│   │   ├── dependencies.py
+│   │   ├── errors.py
 │   │   ├── main.py
+│   │   ├── middleware.py
+│   │   ├── routes_admin.py
+│   │   ├── routes_analytics.py
+│   │   ├── routes_auth.py
 │   │   ├── routes_events.py
-│   │   └── routes_analytics.py
+│   │   └── routes_users.py
 │   │
 │   ├── core/
 │   │   ├── config.py
+│   │   ├── idempotency.py
 │   │   ├── logging.py
-│   │   └── metrics.py
+│   │   ├── metrics.py
+│   │   ├── rate_limit.py
+│   │   ├── redis.py
+│   │   ├── request_context.py
+│   │   └── security.py
 │   │
 │   ├── db/
 │   │   ├── base.py
 │   │   └── session.py
 │   │
 │   ├── models/
-│   │   └── event.py
+│   │   ├── event.py
+│   │   └── user.py
 │   │
 │   ├── repositories/
-│   │   └── events.py
+│   │   ├── events.py
+│   │   └── users.py
 │   │
 │   ├── schemas/
+│   │   ├── analytics.py
 │   │   ├── event.py
-│   │   └── analytics.py
+│   │   └── user.py
 │   │
 │   ├── services/
+│   │   ├── cache.py
 │   │   ├── processing.py
 │   │   └── quality.py
 │   │
@@ -159,7 +243,8 @@ production-data-platform/
 │
 ├── tests/
 │   ├── conftest.py
-│   └── test_api.py
+│   ├── test_api.py
+│   └── test_security.py
 │
 ├── .env.example
 ├── .gitignore
@@ -174,9 +259,9 @@ production-data-platform/
 
 ---
 
-## Data Model
+## Event Data Model
 
-Each event contains:
+Example event payload:
 
 ```json
 {
@@ -208,37 +293,47 @@ normalized_value
 
 ```text
 POST /api/v1/events
-        |
+        │
         ▼
 Validate request
-        |
+        │
+        ▼
+Validate Idempotency-Key
+        │
+        ├──────── cache hit ────────► replay stored response
+        │
         ▼
 Check duplicate event_id
-        |
+        │
         ▼
 Persist event in PostgreSQL
-        |
+        │
         ▼
 processing_status = pending
-        |
+        │
         ▼
-Send Celery task through Redis
-        |
+Queue Celery task through Redis
+        │
         ▼
 Celery worker processes event
-        |
+        │
         ▼
 Quality assessment
-        |
+        │
         ▼
 Value normalization
-        |
+        │
         ▼
 processing_status = processed
-        |
+        │
         ▼
-Updated record stored in PostgreSQL
+Invalidate analytics cache
+        │
+        ▼
+Store idempotent response
 ```
+
+When `PROCESS_ASYNC=false`, processing runs synchronously, which is useful for local development and deterministic tests.
 
 ---
 
@@ -249,7 +344,29 @@ Updated record stored in PostgreSQL
 ```text
 GET /health
 GET /ready
+GET /metrics
 ```
+
+### Authentication
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+```
+
+### Users
+
+```text
+GET /api/v1/users/me
+```
+
+### Admin
+
+```text
+GET /api/v1/admin/users
+```
+
+The admin user endpoint supports pagination and query capabilities including role filtering, email search, and sorting.
 
 ### Events
 
@@ -269,61 +386,93 @@ GET /api/v1/analytics/by-source
 GET /api/v1/analytics/by-type
 ```
 
-### Observability
+Interactive API documentation is available through Swagger UI at `/docs`.
+
+---
+
+## Authentication and RBAC
+
+Users can register and authenticate through the API. Successful login returns a bearer access token.
+
+Protected endpoints use JWT validation through FastAPI dependencies.
+
+Two user roles are currently represented:
 
 ```text
-GET /metrics
+user
+admin
 ```
+
+Regular users can access their own authenticated profile, while admin-only routes require the `admin` role.
+
+The admin user listing supports:
+
+- pagination
+- role filtering
+- email search
+- sorting
+- typed role validation
+
+This keeps authorization logic at the API dependency layer instead of duplicating role checks throughout route handlers.
 
 ---
 
-## Example Event Ingestion
+## Rate Limiting
 
-Request:
+Authentication endpoints are protected with a Redis-backed fixed-window rate limiter.
 
-```json
-{
-  "event_id": "evt-0001",
-  "source": "machine-a",
-  "event_type": "temperature",
-  "value": 72.4,
-  "unit": "celsius",
-  "metadata": {
-    "factory": "plant-1"
-  },
-  "occurred_at": "2026-08-14T09:00:00Z"
-}
+The limiter tracks requests by scope and client address using Redis counters.
+
+Configuration:
+
+```text
+AUTH_RATE_LIMIT_REQUESTS=10
+AUTH_RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
-Initial asynchronous state:
+When the limit is exceeded, the API returns:
 
-```json
-{
-  "event_id": "evt-0001",
-  "processing_status": "pending",
-  "quality_status": "unknown",
-  "normalized_value": null
-}
+```text
+429 Too Many Requests
 ```
 
-After background processing:
+with a `Retry-After` response header.
 
-```json
-{
-  "event_id": "evt-0001",
-  "processing_status": "processed",
-  "quality_status": "good",
-  "normalized_value": 0.9863760217983651
-}
-```
+The centralized HTTP exception handler preserves exception headers, ensuring protocol-level metadata such as `Retry-After` is not lost.
 
 ---
 
-## Analytics
+## Idempotent Event Ingestion
 
-The platform exposes aggregated operational statistics.
+Single-event ingestion supports an `Idempotency-Key` request header.
 
-Example endpoint:
+Example:
+
+```http
+POST /api/v1/events
+Idempotency-Key: event-request-123
+Content-Type: application/json
+```
+
+On the first request:
+
+1. Redis is checked for the idempotency key.
+2. The event is created and processed.
+3. The serialized response is stored in Redis with a TTL.
+
+On a repeated request using the same key:
+
+1. the cached response is returned;
+2. event creation is skipped;
+3. no duplicate write is performed.
+
+This models a common production pattern for clients that may retry requests after network failures or timeouts.
+
+---
+
+## Analytics and Redis Caching
+
+The analytics summary endpoint exposes aggregate operational statistics:
 
 ```text
 GET /api/v1/analytics/summary
@@ -342,6 +491,35 @@ Example response:
 }
 ```
 
+The summary is cached in Redis using a TTL.
+
+Request flow:
+
+```text
+GET /api/v1/analytics/summary
+            │
+            ▼
+       Redis lookup
+        ┌───┴───┐
+      hit      miss
+       │         │
+       ▼         ▼
+   response   PostgreSQL
+                 │
+                 ▼
+             aggregate
+                 │
+                 ▼
+            Redis SETEX
+                 │
+                 ▼
+              response
+```
+
+The cache is invalidated after event writes that can change analytics results.
+
+A batch containing only duplicate events does not invalidate the cache unnecessarily.
+
 Additional grouping endpoints:
 
 ```text
@@ -353,7 +531,9 @@ GET /api/v1/analytics/by-type
 
 ## Observability
 
-Prometheus-compatible metrics are exposed at:
+### Prometheus metrics
+
+Metrics are exposed at:
 
 ```text
 GET /metrics
@@ -368,25 +548,24 @@ data_platform_events_processed_total
 data_platform_event_ingest_duration_seconds
 ```
 
-These metrics provide visibility into:
+These provide visibility into:
 
 - successful event ingestion
-- duplicate rejections
+- duplicate rejection
 - processed events grouped by quality status
 - ingestion latency
 
-Example:
+### Request tracing
 
-```text
-data_platform_events_ingested_total 1.0
-data_platform_events_processed_total{quality_status="good"} 1.0
-```
+Each request is associated with a request ID.
 
----
+Clients can supply an `X-Request-ID`, or the application generates one when absent.
 
-## Structured Logging
+The response includes the request ID so client-side failures can be correlated with server logs.
 
-Application events are emitted as structured JSON logs.
+### Structured logging
+
+Application and request lifecycle events are emitted as structured JSON.
 
 Example:
 
@@ -401,7 +580,40 @@ Example:
 }
 ```
 
-Duplicate-event rejection is also logged.
+Request start/completion logs also include request context such as method, path, response status, request ID, and duration.
+
+### Centralized error handling
+
+The API uses centralized handlers for:
+
+- `HTTPException`
+- request validation errors
+- unexpected exceptions
+
+Errors follow a consistent response structure and include the request ID for traceability.
+
+---
+
+## Health and Readiness
+
+Liveness:
+
+```text
+GET /health
+```
+
+Readiness:
+
+```text
+GET /ready
+```
+
+The readiness endpoint checks application dependencies including:
+
+- database connectivity
+- Redis connectivity
+
+This separates "the process is alive" from "the service is ready to handle traffic."
 
 ---
 
@@ -425,6 +637,18 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Copy the environment template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Run database migrations:
+
+```bash
+alembic upgrade head
+```
+
 Run the API:
 
 ```bash
@@ -441,18 +665,18 @@ http://127.0.0.1:8000/docs
 
 ## Docker Deployment
 
-Build and start the full stack:
+Build and start the stack:
 
 ```bash
 docker compose up --build
 ```
 
-Services:
+Services include:
 
 ```text
 api      - FastAPI application
 db       - PostgreSQL
-redis    - Redis message broker
+redis    - Redis broker/cache/state store
 worker   - Celery worker
 ```
 
@@ -478,61 +702,93 @@ docker compose down
 
 ## Database Migrations
 
-Alembic manages database schema migrations.
+Alembic manages version-controlled database schema changes.
 
-Apply migrations:
+Apply all migrations:
 
 ```bash
 alembic upgrade head
 ```
 
-The Docker API container also applies migrations during startup.
+The migration history includes the event schema and user-management schema.
+
+---
+
+## Configuration
+
+Configuration is loaded from environment variables through the application settings layer.
+
+Representative values:
+
+```env
+APP_NAME=Production Data Platform
+APP_ENV=development
+LOG_LEVEL=INFO
+
+DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/dataplatform
+REDIS_URL=redis://redis:6379/0
+
+PROCESS_ASYNC=true
+
+ANALYTICS_CACHE_TTL_SECONDS=60
+
+AUTH_RATE_LIMIT_REQUESTS=10
+AUTH_RATE_LIMIT_WINDOW_SECONDS=60
+```
+
+Use `.env.example` as the source template.
+
+Real `.env` files are excluded from version control.
 
 ---
 
 ## Testing
 
-Run the automated test suite:
+Run:
 
 ```bash
 pytest -q
 ```
 
-The test suite covers:
-
-- health endpoint
-- readiness endpoint
-- event ingestion
-- duplicate-event rejection
-- event retrieval
-- batch ingestion
-- event filtering
-- analytics aggregation
-- asynchronous processing behavior
-- transition from `pending` to `processed`
-
 Current development result:
 
 ```text
-5 passed
+33 passed
 ```
 
----
+The suite covers:
 
-## Async Processing Test
+- health checks
+- dependency readiness
+- event ingestion
+- duplicate rejection
+- event retrieval
+- batch ingestion
+- filtering
+- synchronous and asynchronous processing behavior
+- analytics aggregation
+- analytics cache misses
+- analytics cache hits
+- analytics cache invalidation
+- user registration
+- duplicate registration
+- login
+- invalid credentials
+- JWT access
+- current-user access
+- RBAC
+- admin pagination
+- admin filtering
+- admin email search
+- admin sorting
+- request ID generation
+- request ID preservation
+- authentication rate limiting
+- `Retry-After` behavior
+- idempotency response storage
+- idempotent response replay
 
-The automated test suite verifies asynchronous behavior without requiring a real Redis or Celery worker during pytest execution.
-
-It verifies that:
-
-1. an event starts with `processing_status = pending`
-2. the correct Celery task is queued
-3. processing logic runs
-4. the event transitions to `processed`
-5. quality status is assigned
-6. a normalized value is generated
-
-The complete Redis/Celery workflow has also been verified manually through Docker Compose.
+Test fixtures isolate the SQLite test database between tests and mock Redis interactions where external infrastructure is not the behavior under test.
 
 ---
 
@@ -544,13 +800,13 @@ Run Ruff:
 ruff check .
 ```
 
-Automatically fix supported issues:
+Apply supported automatic fixes:
 
 ```bash
 ruff check . --fix
 ```
 
-The project currently passes Ruff checks.
+The project is maintained with a clean Ruff check before commits.
 
 ---
 
@@ -558,48 +814,27 @@ The project currently passes Ruff checks.
 
 GitHub Actions runs automatically on pushes and pull requests to `main`.
 
-The CI workflow performs:
+The CI quality gate performs:
 
 ```text
 Install dependencies
-        |
+        │
         ▼
 Run Ruff
-        |
+        │
         ▼
 Run pytest
 ```
 
-This provides an automated quality gate for repository changes.
-
----
-
-## Configuration
-
-Configuration is loaded from environment variables.
-
-Example:
-
-```text
-APP_NAME=Production Data Platform
-APP_ENV=development
-LOG_LEVEL=INFO
-DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/dataplatform
-REDIS_URL=redis://redis:6379/0
-PROCESS_ASYNC=true
-```
-
-Use `.env.example` as a template.
-
-Real `.env` files are excluded from version control.
+This prevents linting or test regressions from being merged unnoticed.
 
 ---
 
 ## Data Quality
 
-The processing service performs basic event-quality checks.
+The processing service performs basic event-quality checks independently from the HTTP layer.
 
-Possible statuses:
+Current statuses include:
 
 ```text
 good
@@ -607,9 +842,7 @@ bad
 unknown
 ```
 
-The quality logic is separated from the HTTP layer so it can be extended independently.
-
-Potential extensions include:
+Keeping quality logic inside the service layer makes it straightforward to extend with:
 
 - physical sensor-range validation
 - missing-value detection
@@ -624,35 +857,63 @@ Potential extensions include:
 
 ### PostgreSQL
 
-Provides persistent relational storage suitable for production-style backend systems.
+Provides durable relational persistence for events and users while supporting constraints, indexing, transactions, and analytical queries.
 
-### Redis and Celery
+### Redis
 
-Separates background processing from HTTP request handling.
+Redis serves several infrastructure roles:
+
+- Celery message broker
+- analytics cache
+- rate-limit state
+- idempotency state
+- readiness dependency
+
+Using a single infrastructure component for these concerns keeps the local stack compact while still demonstrating distributed-service patterns.
+
+### Celery
+
+Moves potentially expensive processing work out of the HTTP request path when asynchronous processing is enabled.
 
 ### Repository Layer
 
-Keeps database access isolated from API routes.
+Keeps database access isolated from route handlers.
 
 ### Service Layer
 
-Separates processing and quality logic from persistence and transport concerns.
+Separates processing, quality, and cache behavior from persistence and HTTP transport concerns.
+
+### JWT and RBAC
+
+JWT provides stateless API authentication, while typed roles and reusable dependencies centralize authorization rules.
+
+### Idempotency Keys
+
+Protect write operations from accidental duplicate execution during client retries.
+
+### Redis Rate Limiting
+
+Demonstrates API abuse protection using shared distributed state rather than in-process counters.
+
+### Cache Invalidation
+
+The analytics cache is invalidated by relevant write operations instead of relying only on TTL expiration.
 
 ### Alembic
 
-Provides explicit version-controlled database migrations.
+Provides explicit, version-controlled database migrations.
 
 ### Prometheus Metrics
 
-Makes application behavior observable with counters and latency histograms.
+Exposes operational counters and latency measurements in a standard monitoring format.
 
-### Structured Logging
+### Structured Logging and Request IDs
 
-Produces machine-readable logs suitable for centralized logging systems.
+Machine-readable logs and request correlation make production debugging substantially easier than unstructured console output.
 
 ### Docker Compose
 
-Allows the complete multi-service environment to be reproduced locally.
+Makes the multi-service environment reproducible locally.
 
 ---
 
@@ -660,53 +921,38 @@ Allows the complete multi-service environment to be reproduced locally.
 
 This repository goes beyond a basic CRUD API.
 
-It includes:
+It demonstrates:
 
-- asynchronous task processing
 - relational persistence
-- database migrations
-- duplicate protection
-- health and readiness checks
-- observability
+- schema migrations
+- asynchronous task execution
+- service and repository layering
+- JWT authentication
+- role-based authorization
+- secure password handling
+- rate limiting
+- idempotent writes
+- Redis caching
+- explicit cache invalidation
+- health/readiness separation
+- request tracing
 - structured logging
-- integration-style tests
+- centralized error handling
+- Prometheus metrics
+- deterministic automated tests
 - CI automation
 - multi-service containerization
 - environment-based configuration
 
-The project demonstrates engineering practices relevant to backend engineering, data engineering, ML infrastructure, and applied AI systems.
-
----
-
-## Future Improvements
-
-Potential extensions include:
-
-- Apache Kafka streaming ingestion
-- dead-letter queues
-- retry policies with exponential backoff
-- Schema Registry
-- OpenTelemetry distributed tracing
-- Grafana dashboards
-- authentication and RBAC
-- Kubernetes deployment
-- cloud deployment
-- PostgreSQL table partitioning
-- audit logging
-- data warehouse integration
-- dbt transformations
-- load testing with Locust
-- rate limiting
-- API versioning
-- horizontal Celery worker scaling
+The project is relevant to **backend engineering, software engineering, data engineering, ML infrastructure, and applied AI platform engineering** roles.
 
 ---
 
 ## Security
 
-Sensitive configuration should be stored only in environment variables.
+Sensitive configuration belongs in environment variables.
 
-The repository excludes:
+The repository excludes local artifacts such as:
 
 ```text
 .env
@@ -715,7 +961,41 @@ virtual environments
 cache files
 ```
 
+Security-oriented features implemented in the application include:
+
+- password hashing
+- JWT authentication
+- RBAC
+- authentication rate limiting
+- standardized error handling
+- no secrets embedded in source code
+
 No credentials or secrets should be committed to Git.
+
+---
+
+## Future Improvements
+
+Potential next steps, intentionally left outside the current scope:
+
+- refresh-token rotation
+- account lockout / suspicious-login detection
+- audit logging for privileged operations
+- OpenTelemetry distributed tracing
+- Grafana dashboards
+- dead-letter queues
+- retry policies with exponential backoff
+- Kafka streaming ingestion
+- Schema Registry
+- Kubernetes deployment
+- cloud deployment
+- PostgreSQL table partitioning
+- data warehouse integration
+- dbt transformations
+- load testing with Locust
+- horizontal Celery worker scaling
+
+The current scope is intentionally focused on a complete, testable production-style backend rather than adding infrastructure only for breadth.
 
 ---
 
