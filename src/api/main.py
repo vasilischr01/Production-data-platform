@@ -5,6 +5,7 @@ from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 
+from src.api.routes_admin import router as admin_router
 from src.api.routes_analytics import router as analytics_router
 from src.api.routes_auth import router as auth_router
 from src.api.routes_events import router as events_router
@@ -58,3 +59,4 @@ app.include_router(events_router)
 app.include_router(analytics_router)
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(admin_router)

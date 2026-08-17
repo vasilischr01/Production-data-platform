@@ -1,5 +1,11 @@
 from unittest.mock import patch
 
+from sqlalchemy.orm import Session
+
+from src.core.security import hash_password
+from src.db.session import engine
+from src.models.user import User
+
 
 def event(event_id="evt-1", source="machine-a", event_type="temperature", value=72.4):
     return {
@@ -220,3 +226,78 @@ def test_current_user_rejects_invalid_token(client):
     )
 
     assert response.status_code == 401
+
+def test_regular_user_cannot_list_users(
+    client,
+):
+    credentials = {
+        "email": "regular@example.com",
+        "password": "StrongPassword123!",
+    }
+
+    client.post(
+        "/api/v1/auth/register",
+        json=credentials,
+    )
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json=credentials,
+    )
+
+    token = login_response.json()[
+        "access_token"
+    ]
+
+    response = client.get(
+        "/api/v1/admin/users",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 403
+
+def test_admin_can_list_users(client):
+    with Session(engine) as db:
+        admin = User(
+            email="admin@example.com",
+            hashed_password=hash_password(
+                "AdminPassword123!"
+            ),
+            role="admin",
+            is_active=True,
+        )
+
+        db.add(admin)
+        db.commit()
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin@example.com",
+            "password": "AdminPassword123!",
+        },
+    )
+
+    assert login_response.status_code == 200
+
+    token = login_response.json()[
+        "access_token"
+    ]
+
+    response = client.get(
+        "/api/v1/admin/users",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert isinstance(body, list)
+    assert len(body) == 1
+    assert body[0]["email"] == "admin@example.com"
+    assert body[0]["role"] == "admin"
