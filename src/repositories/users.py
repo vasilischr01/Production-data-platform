@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.models.user import User
+from src.models.user import User, UserRole
 
 
 def get_user_by_email(
@@ -20,7 +20,7 @@ def create_user(
     *,
     email: str,
     hashed_password: str,
-    role: str = "user",
+    role: str = UserRole.USER.value,
 ) -> User:
     user = User(
         email=email,

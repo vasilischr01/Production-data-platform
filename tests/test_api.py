@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from src.core.security import hash_password
 from src.db.session import engine
-from src.models.user import User
+from src.models.user import User, UserRole
 
 
 def event(event_id="evt-1", source="machine-a", event_type="temperature", value=72.4):
@@ -265,7 +265,7 @@ def test_admin_can_list_users(client):
             hashed_password=hash_password(
                 "AdminPassword123!"
             ),
-            role="admin",
+            role=UserRole.ADMIN.value,
             is_active=True,
         )
 
@@ -297,7 +297,234 @@ def test_admin_can_list_users(client):
 
     body = response.json()
 
-    assert isinstance(body, list)
-    assert len(body) == 1
-    assert body[0]["email"] == "admin@example.com"
-    assert body[0]["role"] == "admin"
+    assert isinstance(body, dict)
+    assert body["page"] == 1
+    assert body["page_size"] == 20
+    assert body["total"] == 1
+    assert body["pages"] == 1
+
+    assert len(body["items"]) == 1
+    assert body["items"][0]["email"] == "admin@example.com"
+    assert body["items"][0]["role"] == UserRole.ADMIN.value
+
+def test_admin_users_pagination(client):
+    with Session(engine) as db:
+        for index in range(5):
+            db.add(
+                User(
+                    email=f"user{index}@example.com",
+                    hashed_password=hash_password(
+                        "Password123!"
+                    ),
+                    role=UserRole.USER.value,
+                    is_active=True,
+                )
+            )
+
+        admin = User(
+            email="admin-pagination@example.com",
+            hashed_password=hash_password(
+                "AdminPassword123!"
+            ),
+            role=UserRole.ADMIN.value,
+            is_active=True,
+        )
+
+        db.add(admin)
+        db.commit()
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin-pagination@example.com",
+            "password": "AdminPassword123!",
+        },
+    )
+
+    token = login_response.json()["access_token"]
+
+    response = client.get(
+        "/api/v1/admin/users?page=2&page_size=2",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["page"] == 2
+    assert body["page_size"] == 2
+    assert body["total"] == 6
+    assert body["pages"] == 3
+    assert len(body["items"]) == 2
+
+
+def test_admin_users_role_filter(client):
+    with Session(engine) as db:
+        db.add_all(
+            [
+                User(
+                    email="admin-filter@example.com",
+                    hashed_password=hash_password(
+                        "AdminPassword123!"
+                    ),
+                    role=UserRole.ADMIN.value,
+                    is_active=True,
+                ),
+                User(
+                    email="user-filter@example.com",
+                    hashed_password=hash_password(
+                        "Password123!"
+                    ),
+                    role=UserRole.USER.value,
+                    is_active=True,
+                ),
+            ]
+        )
+
+        db.commit()
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin-filter@example.com",
+            "password": "AdminPassword123!",
+        },
+    )
+
+    token = login_response.json()["access_token"]
+
+    response = client.get(
+        "/api/v1/admin/users?role=admin",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["role"] == UserRole.ADMIN.value
+
+
+def test_admin_users_email_search(client):
+    with Session(engine) as db:
+        db.add_all(
+            [
+                User(
+                    email="alpha@example.com",
+                    hashed_password=hash_password(
+                        "Password123!"
+                    ),
+                    role=UserRole.USER.value,
+                    is_active=True,
+                ),
+                User(
+                    email="beta@test.com",
+                    hashed_password=hash_password(
+                        "Password123!"
+                    ),
+                    role=UserRole.USER.value,
+                    is_active=True,
+                ),
+                User(
+                    email="admin-search@example.com",
+                    hashed_password=hash_password(
+                        "AdminPassword123!"
+                    ),
+                    role=UserRole.ADMIN.value,
+                    is_active=True,
+                ),
+            ]
+        )
+
+        db.commit()
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin-search@example.com",
+            "password": "AdminPassword123!",
+        },
+    )
+
+    token = login_response.json()["access_token"]
+
+    response = client.get(
+        "/api/v1/admin/users?email=test.com",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["total"] == 1
+    assert body["items"][0]["email"] == "beta@test.com"
+
+
+def test_admin_users_sorting(client):
+    with Session(engine) as db:
+        db.add_all(
+            [
+                User(
+                    email="zeta@example.com",
+                    hashed_password=hash_password(
+                        "Password123!"
+                    ),
+                    role=UserRole.USER.value,
+                    is_active=True,
+                ),
+                User(
+                    email="alpha@example.com",
+                    hashed_password=hash_password(
+                        "Password123!"
+                    ),
+                    role=UserRole.USER.value,
+                    is_active=True,
+                ),
+                User(
+                    email="admin-sort@example.com",
+                    hashed_password=hash_password(
+                        "AdminPassword123!"
+                    ),
+                    role=UserRole.ADMIN.value,
+                    is_active=True,
+                ),
+            ]
+        )
+
+        db.commit()
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "admin-sort@example.com",
+            "password": "AdminPassword123!",
+        },
+    )
+
+    token = login_response.json()["access_token"]
+
+    response = client.get(
+        "/api/v1/admin/users?sort_by=email&sort_order=asc",
+        headers={
+            "Authorization": f"Bearer {token}"
+        },
+    )
+
+    assert response.status_code == 200
+
+    emails = [
+        item["email"]
+        for item in response.json()["items"]
+    ]
+
+    assert emails == sorted(emails)

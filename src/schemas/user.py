@@ -23,6 +23,12 @@ class UserRead(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+class PaginatedUsers(BaseModel):
+    items: list[UserRead]
+    page: int
+    page_size: int
+    total: int
+    pages: int
 
 class TokenResponse(BaseModel):
     access_token: str

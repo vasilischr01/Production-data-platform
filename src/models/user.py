@@ -1,10 +1,15 @@
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
 
+
+class UserRole(StrEnum):
+    USER = "user"
+    ADMIN = "admin"
 
 class User(Base):
     __tablename__ = "users"
@@ -28,7 +33,7 @@ class User(Base):
 
     role: Mapped[str] = mapped_column(
         String(32),
-        default="user",
+        default=UserRole.USER.value,
         nullable=False,
     )
 
